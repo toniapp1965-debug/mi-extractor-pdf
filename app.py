@@ -4,15 +4,21 @@ import pandas as pd
 import re
 
 # Configuración visual
-st.set_page_config(page_title="Extractor Honest Final", layout="wide")
-st.title("📦 Extractor de Inventario")
-st.markdown("Buscador implacable: Encuentra 'HONEST LAB' en cualquier parte de la fila.")
+st.set_page_config(page_title="Extractor Honest Avanzado", layout="wide")
+st.title("📦 Extractor de Inventario Pro")
+st.markdown("Filtros: HONEST (Todo) | Otros: Combinaciones de palabras separadas por ';' ")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Configuración de Filtros")
-# He acortado a "HONEST" para que pille "HONEST LAB", "HONEST LABS", etc.
 proveedor_fijo = st.sidebar.text_input("Proveedor a incluir siempre", "HONEST")
-palabras_extra_str = st.sidebar.text_input("Keywords obligatorias para otros proveedores", "STONE, TABLE")
+
+# Nueva explicación para los grupos de palabras
+st.sidebar.markdown("**Keywords para otros proveedores:**")
+palabras_extra_str = st.sidebar.text_input(
+    "Usa ',' para 'Y' y ';' para 'O'", 
+    "STONE, TABLE ; STONE, MESA"
+)
+st.sidebar.caption("Ejemplo: 'STONE, TABLE ; STONE, MESA' buscará ambas combinaciones.")
 
 st.sidebar.markdown("---")
 col_nombre = st.sidebar.number_input("Columna Nombre (Índice)", value=4)
@@ -29,7 +35,15 @@ archivos_subidos = st.file_uploader("Sube aquí tus PDFs", type="pdf", accept_mu
 
 if archivos_subidos:
     idx_extra = [int(i.strip()) for i in indices_extra_str.split(",") if i.strip()]
-    keywords = [p.strip().upper() for p in palabras_extra_str.split(",") if p.strip()]
+    
+    # PROCESAMOS LOS GRUPOS DE PALABRAS CLAVE
+    # "STONE, TABLE ; STONE, MESA" -> [['STONE', 'TABLE'], ['STONE', 'MESA']]
+    grupos_keywords = []
+    for grupo in palabras_extra_str.split(";"):
+        palabras = [p.strip().upper() for p in grupo.split(",") if p.strip()]
+        if palabras:
+            grupos_keywords.append(palabras)
+
     datos_brutos = []
 
     with st.spinner('Procesando datos...'):
@@ -40,27 +54,23 @@ if archivos_subidos:
                     if tabla:
                         for fila in tabla:
                             try:
-                                # 1. JUNTAMOS TODA LA FILA EN UN SOLO TEXTO
-                                # Buscamos en toda la fila por si el texto está movido de columna
-                                texto_total_fila = " ".join([str(c) for c in fila if c]).upper()
+                                # 1. Búsqueda de Proveedor (Flexible en toda la fila)
+                                fila_completa = " ".join([str(c) for c in fila if c]).upper()
+                                es_honest = proveedor_fijo.upper() in fila_completa if proveedor_fijo else False
                                 
+                                # 2. Búsqueda de Combinaciones de Palabras (En el nombre)
                                 nombre_prod = str(fila[col_nombre]).replace('\n', ' ').strip()
                                 
-                                # 2. ¿ESTÁ LA PALABRA HONEST EN LA FILA?
-                                # Basta con que encuentre "HONEST" para saber que es de ellos
-                                es_honest = False
-                                if proveedor_fijo.upper() in texto_total_fila:
-                                    es_honest = True
-                                
-                                # 3. ¿TIENE LAS KEYWORDS? (Para otros proveedores)
-                                tiene_keys = False
-                                if keywords:
-                                    tiene_keys = all(k in nombre_prod.upper() for k in keywords)
+                                coincide_algun_grupo = False
+                                for grupo in grupos_keywords:
+                                    # Verifica si TODAS las palabras del grupo están en el nombre
+                                    if all(palabra in nombre_prod.upper() for palabra in grupo):
+                                        coincide_algun_grupo = True
+                                        break # Si ya coincide con un grupo, no hace falta mirar más
 
-                                # SI SE CUMPLE ALGUNA, GUARDAMOS
-                                if es_honest or tiene_keys:
+                                # FILTRO FINAL
+                                if es_honest or coincide_algun_grupo:
                                     qty_raw = str(fila[col_cantidad])
-                                    # Sacamos solo los números de la cantidad
                                     qty = int(''.join(filter(str.isdigit, qty_raw))) if any(c.isdigit() for c in qty_raw) else 0
                                     
                                     if qty > 0:
@@ -91,8 +101,7 @@ if archivos_subidos:
         st.success(f"¡Análisis completado!")
         st.dataframe(df, use_container_width=True)
 
-        # Descarga con formato compatible para Excel
         csv = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 Descargar CSV", csv, "inventario_honest.csv", "text/csv")
     else:
-        st.warning("No he encontrado nada. Prueba a cambiar el 'Proveedor' o las 'Keywords'.")
+        st.warning("No he encontrado nada. Prueba a cambiar los filtros.")
