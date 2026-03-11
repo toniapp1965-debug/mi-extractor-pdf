@@ -6,12 +6,12 @@ import re
 # Configuración visual de la web
 st.set_page_config(page_title="Extractor Inteligente Honest", layout="wide")
 st.title("📦 Extractor de Inventario Final")
-st.markdown("Filtros avanzados con orden alfabético y limpieza de ceros.")
+st.markdown("Prioridad: HONEST LAB (Todo) + Otros proveedores (Solo si cumplen todas las palabras clave).")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Configuración de Filtros")
-proveedor = st.sidebar.text_input("Proveedor principal", "HONEST LAB")
-palabras_extra_str = st.sidebar.text_input("Palabras clave en descripción", "STONE, TABLE")
+proveedor_fijo = st.sidebar.text_input("Proveedor a incluir siempre", "HONEST LAB")
+palabras_extra_str = st.sidebar.text_input("Keywords obligatorias para otros proveedores", "STONE, TABLE")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Ajustes de Columnas")
@@ -28,7 +28,7 @@ orden_alfabetico = st.sidebar.checkbox("Ordenar alfabéticamente", value=True)
 archivos_subidos = st.file_uploader("Sube aquí tus PDFs", type="pdf", accept_multiple_files=True)
 
 if archivos_subidos:
-    indices_extra = [int(i.strip()) for i in indices_extra_str.split(",") if i.strip()]
+    indices_extra = [int(i.strip()) for i in Otras_Columnas_Indices_str.split(",") if i.strip()] if 'Otras_Columnas_Indices_str' in locals() else [int(i.strip()) for i in indices_extra_str.split(",") if i.strip()]
     palabras_clave = [p.strip().upper() for p in palabras_extra_str.split(",") if p.strip()]
     datos_brutos = []
 
@@ -40,18 +40,25 @@ if archivos_subidos:
                     if tabla:
                         for fila in tabla:
                             try:
+                                # Extraer datos base
                                 nombre = str(fila[col_nombre]).replace('\n', ' ').strip()
                                 fila_texto_completa = [str(celda).upper() for celda in fila if celda]
                                 
-                                coincide_proveedor = any(proveedor.upper() in t for t in fila_texto_completa) if proveedor else False
-                                coincide_keyword = any(k in nombre.upper() for k in palabras_clave)
+                                # 1. CONDICIÓN HONEST LAB (Coincidencia en cualquier parte de la fila)
+                                es_proveedor_fijo = any(proveedor_fijo.upper() in t for t in fila_texto_completa) if proveedor_fijo else False
+                                
+                                # 2. CONDICIÓN KEYWORDS (Deben estar TODAS en el nombre del producto)
+                                if palabras_clave:
+                                    tiene_todas_keywords = all(k in nombre.upper() for k in palabras_clave)
+                                else:
+                                    tiene_todas_keywords = False
 
-                                if coincide_proveedor or coincide_keyword:
+                                # LÓGICA FINAL: Si es Honest Lab O si tiene todas las keywords
+                                if es_proveedor_fijo or tiene_todas_keywords:
                                     qty_raw = str(fila[col_cantidad])
                                     qty = int(''.join(filter(str.isdigit, qty_raw))) if any(c.isdigit() for c in qty_raw) else 0
                                     
-                                    # --- MEJORA 1: FILTRAR CANTIDADES 0 ---
-                                    # Si la cantidad es 0, no lo añadimos a la lista inicial
+                                    # Solo añadir si cantidad es mayor a 0
                                     if qty > 0:
                                         extras = [str(fila[i]).replace('\n', ' ').strip() if fila[i] else "" for i in indices_extra]
                                         datos_brutos.append([nombre] + extras + [qty])
@@ -70,26 +77,25 @@ if archivos_subidos:
             dict_agrup['Cantidad'] = 'sum'
             df = df.groupby('Producto').agg(dict_agrup).reset_index()
 
-        # --- MEJORA 2: ORDEN ALFABÉTICO ---
+        # Ordenar
         if orden_alfabetico:
             df = df.sort_values(by='Producto', ascending=True)
         else:
-            # Si no es alfabético, lo dejamos por cantidad (más a menos)
             df = df.sort_values(by='Cantidad', ascending=False)
 
-        # Asegurar que cantidad sea la última columna
+        # Reordenar columnas para que Cantidad sea la última
         cols = [c for c in df.columns if c != 'Cantidad'] + ['Cantidad']
         df = df[cols]
 
-        st.success(f"¡Hecho! Lista limpia y ordenada generada.")
+        st.success(f"¡Listo! Se han filtrado los productos según tus reglas.")
         st.dataframe(df, use_container_width=True)
 
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Descargar Inventario Final (CSV)",
+            label="📥 Descargar Inventario (CSV)",
             data=csv,
             file_name=f"inventario_final.csv",
             mime='text/csv',
         )
     else:
-        st.warning("No se encontraron elementos con cantidad mayor a cero que coincidan con los filtros.")
+        st.warning("No se encontraron elementos que cumplan las condiciones.")
