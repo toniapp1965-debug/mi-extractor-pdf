@@ -26,7 +26,6 @@ indices_extra_str = st.sidebar.text_input("Otras columnas (ej: 6, 7)", "6, 7")
 
 st.sidebar.markdown("---")
 st.sidebar.header("4. Orden del Listado")
-# USAMOS BOTONES REDONDOS (Radio)
 opcion_orden = st.sidebar.radio(
     "Selecciona cómo quieres la lista:",
     ["Orden original del PDF", "Alfabético (A-Z)", "Por cantidad (Mayor a menor)"]
@@ -98,11 +97,9 @@ if archivos_subidos:
                 return row
             df = df.apply(aplicar_excepcion, axis=1)
             
-            # Agrupamos. La posicion original será la más pequeña (la primera vez que sale)
             cols_agrup = [c for c in df.columns if c not in ['Cantidad', 'Posicion_Original']]
             df = df.groupby(cols_agrup).agg({'Cantidad': 'sum', 'Posicion_Original': 'min'}).reset_index()
 
-        # APLICAR EL ORDEN
         if opcion_orden == "Orden original del PDF":
             df = df.sort_values(by='Posicion_Original', ascending=True)
         elif opcion_orden == "Alfabético (A-Z)":
@@ -110,7 +107,6 @@ if archivos_subidos:
         else:
             df = df.sort_values(by='Cantidad', ascending=False)
 
-        # Limpiar columna de posición antes de mostrar
         cols_finales = [c for c in df.columns if c not in ['Cantidad', 'Posicion_Original']] + ['Cantidad']
         df_final = df[cols_finales]
 
